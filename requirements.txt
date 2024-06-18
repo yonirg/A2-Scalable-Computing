@@ -1,0 +1,4 @@
+celery
+faker
+psycopg2
+pyspark
