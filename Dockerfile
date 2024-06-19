@@ -21,4 +21,6 @@ RUN set -ex \
 
 COPY server.py .
 COPY client.py .
+COPY datarepo.py .
+#COPY cupom.py .
 COPY mock/ ./mock/
