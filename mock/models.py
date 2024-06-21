@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 from faker import Faker
 from functools import wraps
-from dataclasses import dataclass, field
-from random import choice
-from typing import Optional
+from dataclasses import dataclass
 import time
+import datetime
 
 @dataclass
 class User:
@@ -36,6 +35,12 @@ class Purchase_Order:
     creation_date: str
     payment_date: str
     delivery_date: str
+
+@dataclass
+class Purchase_History:
+    user_id: str
+    total_value: float
+    timestamp: datetime.datetime
 
 # Singleton decorator
 def singleton(cls):
