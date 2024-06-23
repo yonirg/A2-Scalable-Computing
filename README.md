@@ -26,13 +26,13 @@ docker-compose up --build -d
 Em seguida, inicie o cliente:
 
 ```bash
-docker-compose exec celery_worker python client.py
+docker-compose exec celery_server_worker python client.py
 ```
 
 Você pode usar os seguintes comandos para verificar o status do servidor:
 
 ```bash
-docker-compose logs celery_worker
+docker-compose logs celery_server_worker
 ```
 
 ```bash

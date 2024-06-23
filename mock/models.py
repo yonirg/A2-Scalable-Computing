@@ -3,7 +3,7 @@ from faker import Faker
 from functools import wraps
 from dataclasses import dataclass
 import time
-import datetime
+from datetime import datetime, timedelta
 
 @dataclass
 class User:
@@ -48,7 +48,7 @@ class Purchase_Order:
 class Purchase_History:
     user_id: str
     total_value: float
-    timestamp: datetime.datetime
+    timestamp: datetime
 
 # Singleton decorator
 def singleton(cls):

@@ -2,6 +2,7 @@ from mock.models import generate_user, generate_product, generate_stock, generat
 from server import process_user_data, process_product_data, process_store_data, process_stock_data, process_purchase_order_data
 from concurrent.futures import ThreadPoolExecutor
 import random
+import json
 
 mult = 10
 # Quantidade de dados simulados a serem gerados
@@ -46,35 +47,48 @@ NUM_MESSAGES = 10
 # Assume que process_user_data, process_product_data, process_store_data, process_stock_data, process_purchase_order_data are defined
 
 # Define functions to handle delayed processing for each type
+def process(process_name, data):
+    print(process_name)
+    for row in data:
+        row_json = json.dumps(row.__dict__)
+        process_user_data.delay()    
+
+
 def process_users():
     print("Users:")
     for user in users:
-        process_user_data.delay(user.__dict__)
+        dados = json.dumps(user.__dict__)
+        process_user_data.delay(dados)
 
 def process_products():
     print("\nProducts:")
     for product in products:
-        process_product_data.delay(product.__dict__)
+        dados = json.dumps(product.__dict__)
+        process_product_data.delay(dados)
 
 def process_stores():
     print("\nLojas:")
     for store in stores:
-        process_store_data.delay(store.__dict__)
+        dados = json.dumps(store.__dict__) 
+        process_store_data.delay(dados)
 
 def process_stocks():
     print("\nStocks:")
     for stock in stocks:
-        process_stock_data.delay(stock.__dict__)
+        dados = json.dumps(stock.__dict__)
+        process_stock_data.delay(dados)
 
 def process_purchase_orders():
     print("\nPurchase Orders:")
     for order in purchase_orders:
-        process_purchase_order_data.delay(order.__dict__)
+        dados = json.dumps(order.__dict__)
+        process_purchase_order_data.delay(dados)
 
 def process_purchase_orders_recent():
     print("\nRecent purchase Orders:")
     for order in purchase_orders_recent:
-        process_purchase_order_data.delay(order.__dict__)
+        dados = json.dumps(order.__dict__)
+        process_purchase_order_data.delay(dados)
 
 # Create a ThreadPoolExecutor
 with ThreadPoolExecutor(max_workers=5) as executor:
