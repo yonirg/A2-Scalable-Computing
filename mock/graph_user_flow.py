@@ -27,7 +27,6 @@ edges = [
     (CHECKOUT, HOME, {"prob": 0.1}),
 ]
 
-
 G = nx.DiGraph()
 G.add_nodes_from(nodes)
 G.add_edges_from(edges)

@@ -6,9 +6,10 @@ import csv
 from collections import deque
 from graph_user_flow import *
 import time
-# import msvcrt
-import rpc
-import time
+from datetime import datetime, timedelta
+
+X = 1000  # Minimum value of purchases in the last 10 minutes
+Y = 5000  # Minimum value of purchases in the last 6 hours
 
 @dataclass
 class SimulationParams:
@@ -24,15 +25,15 @@ class Simulation:
     params: SimulationParams
     cycle: int
     silent: bool = True
-    stub: rpc.pb2_grpc.SimulationServiceStreamStub
 
-    def __init__(self, params: SimulationParams, stub: rpc.pb2_grpc.SimulationServiceStreamStub, silent: bool = True):
+    def __init__(self, params: SimulationParams, silent: bool = True):
         self.cycle = 0
         self.params = params
         self.silent = silent
         self.users = []
         self.new_users = []
         self.products = []
+        self.products_prices = {}
         self.new_products = []
         self.stock = {}
         self.new_stock_decreases = {}
@@ -43,11 +44,12 @@ class Simulation:
         self.depuration = []
         self.log_flow = []
         self.user_flow_report = []
-        self.stub = stub
+        self.purchase_history = []
+        self.issued_coupons = {}
 
         self.G = G
 
-        self.folder_name = "mock_files"
+        self.folder_name = "mock/mock_files"
         self.subfolder_csv = "csv"
         self.subfolder_log = "log"
         self.subfolder_http_request = "request"
@@ -58,13 +60,13 @@ class Simulation:
         self.request_file_name = "request"
         self.request_complete_path = f"{self.subfolder_http_request}/{self.request_file_name}"
 
-        # if the folder exists, delete its contents
+        # If the folder exists, delete its contents
         if os.path.exists(self.folder_name):
             self.remove_folder_contents(self.folder_name)
         else:
             os.makedirs(self.folder_name)
 
-        # create inside folder_name or delete other folder if they exist for the other subfolders
+        # Create inside folder_name or delete other folder if they exist for the other subfolders
         csvs_folder = f"{self.folder_name}/{self.subfolder_csv}"
         logs_folder = f"{self.folder_name}/{self.subfolder_log}"
         http_request_folder = f"{self.folder_name}/{self.subfolder_http_request}"
@@ -75,22 +77,22 @@ class Simulation:
             else:
                 os.makedirs(folder)
 
-        # generate users at the start of the simulation
+        # Generate users at the start of the simulation
         for _ in range(self.params.num_initial_users):
             self.__generate_user()
 
-        # generate products at the start of the simulation
+        # Generate products at the start of the simulation
         for _ in range(self.params.num_initial_products):
             self.__generate_product()
 
-        # generate stock for the products
+        # Generate stock for the products
         for product in self.products:
             self.__generate_stock(product, self.params.qtd_stock_initial)
 
         self.__report_initial_cycle()
     
     def __report_initial_cycle(self):
-        # report users, products and stocks created, creating the new csvs
+        # Report users, products and stocks created, creating the new csvs
         with open(self.csv_complete_path[0], 'w') as file:
             writer = csv.writer(file, delimiter=';', lineterminator='\n')
             first_line = ["id", "name", "email", "address", "registration_date", "birth_date"]
@@ -127,7 +129,8 @@ class Simulation:
                 os.remove(file_path)     
     
     def run(self):
-        while True:
+        END = time.time() + 15 # Run for 15 seconds
+        while time.time() < END:
             self.cycle += 1
 
             # CONTA VERDE
@@ -137,7 +140,7 @@ class Simulation:
                 self.__generate_product()
             self.__generate_stock_for_new_products()
             
-            # allow users to enter and perform actions on the system, after they are loged
+            # Allow users to enter and perform actions on the system, after they have logged
             # DATACAT & DataAnalytics
             self.__select_waiting_users()
             self.__select_users_to_login()    
@@ -154,7 +157,7 @@ class Simulation:
            
     def __introduct_errors_for_log(self):
         
-        # choose a random number int from 0 to 5
+        # Choose a random integer between 0 and 5
         component_error = randint(0, 5)
         message = f";Error;{component_error}\n"
         self.__add_message_to_log(message)
@@ -172,12 +175,12 @@ class Simulation:
 
         for _ in self.waiting_users.copy():
             user = self.waiting_users.popleft()
-            # apply userflow to the user, without using threads
+            # Apply userflow to the user, without using threads
             self.__user_flow(user)
 
 
     def __user_flow(self, user):
-        # let the user perform actions on the system until it reaches the EXIT node
+        # Let the user perform actions on the system until it reaches the EXIT node
         current_node = LOGIN
         message = f";Audit;{user};{LOGIN}\n"
         self.__add_message_to_log(message)
@@ -186,8 +189,7 @@ class Simulation:
         current_product = None
         
         while current_node != EXIT:
-            # select the next as the current node's successor, based on the probability of each neighbor in the edge
-
+            # Select the next as the current node's successor, based on the probability of each neighbor in the edge
             current_node_neighbors = {}
             for u, v, d in G.edges(data=True):
                 current_node_neighbors.setdefault(u, []).append((v, d["prob"]))
@@ -215,7 +217,6 @@ class Simulation:
         self.__exit(user)
 
     def get_timestamp_string(self):
-        """Returns a high-resolution timestamp string."""
         return str(time.time_ns())  # Use nanoseconds for best resolution
     
     def __add_message_to_log(self, message):
@@ -243,6 +244,10 @@ class Simulation:
         msg = f";User;{user};{STIMUL_CLICK};{CHECKOUT} with {product_list}.\n"
         self.__add_message_to_user_flow_report(msg)
 
+        total_value = sum([self.products_prices[product] for product in product_list])
+        self.purchase_history.append(models.Purchase_History(user, total_value, datetime.now()))
+        
+        self.__evaluate_bonus(user)
         
         def add_purchase_order():
             dictionary_products = {}
@@ -257,7 +262,33 @@ class Simulation:
 
                 self.__decrease_stock(product, quantity)
         add_purchase_order()
-            
+
+    def __evaluate_bonus(self, user_id):
+        now = datetime.now()
+        ten_minutes_ago = now - timedelta(minutes=10)
+        six_hours_ago = now - timedelta(hours=6)
+
+        last_10_minutes_purchases = [
+            p.total_value for p in self.purchase_history 
+            if p.user_id == user_id and p.timestamp >= ten_minutes_ago
+        ]
+        last_6_hours_purchases = [
+            p.total_value for p in self.purchase_history 
+            if p.user_id == user_id and p.timestamp >= six_hours_ago
+        ]
+
+        if sum(last_10_minutes_purchases) > X and sum(last_6_hours_purchases) > Y:
+            self.__issue_coupon(user_id)
+
+    def __issue_coupon(self, user_id):
+        coupon_code = f"DISCOUNT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{user_id}"
+        self.issued_coupons[user_id] = coupon_code
+        self.__notify_web_application(user_id, coupon_code)
+
+    def __notify_web_application(self, user_id, coupon_code):
+        msg = f";Bonus;{coupon_code};{user_id}\n"
+        self.__add_message_to_log(msg)
+        
     def __exit(self, user):
         msg = f";User;{user};{STIMUL_CLICK};{EXIT}\n"
         self.__add_message_to_user_flow_report(msg)
@@ -273,7 +304,7 @@ class Simulation:
         self.new_users.append(user)
 
     def __generate_users(self):
-        # choose a random number of users to generate, between 0 and 1, with 70% chance of generating 0 users
+        # Choose a random number of users to generate, between 0 and 1, with 70% chance of generating 0 users
         num_users = 1 if random() > 0.3 else 0
         for _ in range(num_users):
             self.__generate_user()
@@ -285,10 +316,11 @@ class Simulation:
     def __generate_product(self):
         product = models.generate_product()
         self.products.append(product.id)
+        self.products_prices[product.id] = product.price
         self.new_products.append(product)        
 
     def __generate_products(self):
-        # choose a random number of products to generate, between 0 and 1, with 80% chance of generating 0 products
+        # Choose a random number of products to generate, between 0 and 1, with 80% chance of generating 0 products
         num_products = 1 if random() > 0.2 else 0
         for _ in range(num_products):
             self.__generate_product()
@@ -315,15 +347,12 @@ class Simulation:
             return
 
     def __report_cycle(self):
-    
-
-        # add cycle to the beginning of the base name of the log file
+        # Add cycle to the beginning of the base name of the log file
         log_cycle = f"{self.folder_name}/{self.subfolder_log}/{self.cycle}{self.log_filename}"
 
-        # add cycle to the beginning of the base name of the http request file
+        # Add cycle to the beginning of the base name of the http request file
         request_cycle = f"{self.folder_name}/{self.subfolder_http_request}/{self.cycle}{self.request_file_name}"
 
-        # self.log_flow.insert(0, ";".join(log_flow_colunms) + "\n")
         
         first_half = self.user_flow_report[len(self.user_flow_report)//2:]
         self.user_flow_report = self.user_flow_report[:len(self.user_flow_report)//2]
@@ -333,7 +362,7 @@ class Simulation:
 
 
         first_half.insert(0, ";".join(log_flow_colunms) + "\n")
-        # add to the beginning of the log_flow the first half of the user_flow_report
+        # Add to the beginning of the log_flow the first half of the user_flow_report
         self.log_flow = first_half + self.log_flow
 
         self.write_log(log_cycle)
@@ -342,7 +371,7 @@ class Simulation:
         self.write_log_dataAnalytics(request_cycle)
         self.user_flow_report = []
 
-        # update (create if not exists) the new_users in a .csv file, keeping existent users
+        # Update (create if doesn't exists) new_users in a .csv file, keeping existing ones
         self.add_new_users_to_csv()
         self.new_users = []
 
@@ -355,69 +384,51 @@ class Simulation:
         self.add_new_purchase_orders_to_csv()
         self.new_purchase_orders = []
 
+
+        # Log issued coupons
+        if self.issued_coupons:
+            with open(self.log_complete_path, 'a') as log_file:
+                for user_id, coupon_code in self.issued_coupons.items():
+                    log_file.write(f"Coupon issued to user {user_id}: {coupon_code}\n")
+            self.issued_coupons.clear()
+
     def add_new_purchase_orders_to_csv(self):
         if self.new_purchase_orders:
             content = [[purchase_order.user_id, purchase_order.product_id, purchase_order.quantity, purchase_order.creation_date, purchase_order.payment_date, purchase_order.delivery_date] for purchase_order in self.new_purchase_orders]
             with open(self.csv_complete_path[3], 'a') as file:
-                # acquire lock and write to the file, then release the lock
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                # if self.acquire_lock(self.csv_complete_path[3]):
                 writer.writerows(content)
-                # self.release_lock(self.csv_complete_path[3])
-
+    
     def rewrite_full_stock_to_csv(self):
         if self.new_stock_decreases:
             first_line = ["id_product", "quantity"]
             content = [[product_id, quantity] for product_id, quantity in self.stock.items()]
-            # add the first line to the content beggining
+            # Add the first line to the content beggining
             content.insert(0, first_line)
             with open(self.csv_complete_path[2], 'w', newline='') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                # if self.acquire_lock(self.csv_complete_path[2]):
                 writer.writerows(content)
-                # self.release_lock(self.csv_complete_path[2])
-
 
     def new_method(self):
         if self.new_products:
             content = [[product.id, product.name, product.image, product.description, product.price] for product in self.new_products]
             with open(self.csv_complete_path[1], 'a') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                # acquire lock and write to the file, then release the lock
-                # if self.acquire_lock(self.csv_complete_path[1]):
                 writer.writerows(content)
-                # self.release_lock(self.csv_complete_path[1])
-
+    
     def add_new_users_to_csv(self):
         if self.new_users:
             content = [[user.id, user.name, user.email, user.address, user.registration_date, user.birth_date] for user in self.new_users]
             with open(self.csv_complete_path[0], 'a') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                # acquire lock and write to the file, then release the lock
-                # if self.acquire_lock(self.csv_complete_path[0]):
                 writer.writerows(content)
-                # self.release_lock(self.csv_complete_path[0])
 
     def write_log_dataAnalytics(self, request_cycle):
-        rpc.report_cycle(self.stub, self.user_flow_report)
-
+        if self.user_flow_report:
+            with open(request_cycle, "a") as f:
+                f.writelines(self.user_flow_report)
+    
     def write_log(self, log_cycle):
         if self.log_flow:
             with open(log_cycle, "a") as f:
-                # acquire lock and write to the file, then release the lock
-                # if self.acquire_lock(log_cycle):
                 f.writelines(self.log_flow)
-                # self.release_lock(log_cycle)
-
-    # def acquire_lock(self, file_path):
-    #     try:
-    #         msvcrt.locking(open(file_path, "rb").fileno(), msvcrt.LK_NBLCK, 1)
-    #         return True
-    #     except IOError:
-    #         return False
-
-    # def release_lock(self, file_path):
-    #     try:
-    #         msvcrt.locking(open(file_path, "rb").fileno(), msvcrt.LK_UNLCK, 1)
-    #     except IOError:
-    #         pass

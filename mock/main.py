@@ -1,12 +1,7 @@
 from graph_user_flow import *
 import simulation
-import grpc
-import sys
-sys.path.append('../shared_proto')
-import data_analytics_pb2_grpc
 
 if __name__ == "__main__":
-
     print("Starting simulation...")
 
     params = simulation.SimulationParams(
@@ -19,12 +14,7 @@ if __name__ == "__main__":
         num_new_products_per_cycle=100,
     )
 
-    connection = grpc.insecure_channel('localhost:50051')
-    stub = data_analytics_pb2_grpc.SimulationServiceStreamStub(connection)
-
-    sim = simulation.Simulation(params, stub)
-
-    
+    sim = simulation.Simulation(params)
     sim.run()
 
     print("Simulation finished.")
