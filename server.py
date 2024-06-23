@@ -27,6 +27,11 @@ def process_product_data(product_data):
     get_database_connection('product', product_data)
 
 @app.task(delivery_mode=2)
+def process_store_data(store_data):
+    logger.info(f"Recebido dados da loja: {store_data}")
+    get_database_connection('store', store_data)
+
+@app.task(delivery_mode=2)
 def process_stock_data(stock_data):
     logger.info(f"Recebido dados do estoque: {stock_data}")
     get_database_connection('stock', stock_data)

@@ -4,6 +4,7 @@ from functools import wraps
 from dataclasses import dataclass, field
 from random import choice
 from typing import Optional
+from datetime import datetime, timedelta
 import time
 
 @dataclass
@@ -24,14 +25,22 @@ class Product:
     price: float
 
 @dataclass
+class Store:
+    id: str
+    name: str
+    url: str
+
+@dataclass
 class Stock:
     id_product: str
+    id_store: str
     quantity: int
 
 @dataclass
 class Purchase_Order:
     user_id: str
     product_id: str
+    store_id: str
     quantity: int
     creation_date: str
     payment_date: str
@@ -81,22 +90,64 @@ def generate_product():
         price=faker.random_int(min=1, max=1000),
     )
 
-def generate_stock(product_id: str, quantity: int):
+def generate_store():
+    """Generates a Store dataclass instance with unique data."""
+    faker = FakerSingleton().get_faker()
+    return Store(
+        id=faker.unique.numerify(text="3######"),
+        name=faker.company(),
+        url=faker.url(),
+    )
+
+
+def generate_stock(product_id: str, store_id: str, quantity: int):
     """Generates a Stock dataclass instance with unique data."""
     faker = FakerSingleton().get_faker()
     return Stock(
         id_product=product_id,
+        id_store=store_id,
         quantity=quantity,
     )
 
-def generate_purchase_order(user_id: str, product_id: str, quantity: int):
-    """Generates a Purchase_Order dataclass instance with unique data."""
+def generate_purchase_order(user_id: str, product_id: str, store_id: str, quantity: int) -> Purchase_Order:
     faker = FakerSingleton().get_faker()
+    
+    # Generate random dates within a year
+    start_date = datetime.now() - timedelta(days=365)
+    end_date = datetime.now()
+    
+    creation_date = faker.date_time_between(start_date=start_date, end_date=end_date)
+    payment_date = faker.date_time_between(start_date=creation_date, end_date=end_date)
+    delivery_date = faker.date_time_between(start_date=payment_date, end_date=end_date)
+    
     return Purchase_Order(
         user_id=user_id,
         product_id=product_id,
+        store_id=store_id,
         quantity=quantity,
-        creation_date=str(time.time_ns()),
-        payment_date=str(time.time_ns()),
-        delivery_date=str(time.time_ns()),
+        creation_date=creation_date.isoformat(),
+        payment_date=payment_date.isoformat(),
+        delivery_date=delivery_date.isoformat()
+    )
+
+
+def generate_purchase_order_recent(user_id: str, product_id: str, store_id: str, quantity: int) -> Purchase_Order:
+    faker = FakerSingleton().get_faker()
+    
+    # Generate random dates within a year
+    start_date = datetime.now() - timedelta(minutes=5)
+    end_date = datetime.now()
+    
+    creation_date = faker.date_time_between(start_date=start_date, end_date=end_date)
+    payment_date = faker.date_time_between(start_date=creation_date, end_date=end_date)
+    delivery_date = faker.date_time_between(start_date=payment_date, end_date=end_date)
+    
+    return Purchase_Order(
+        user_id=user_id,
+        product_id=product_id,
+        store_id=store_id,
+        quantity=quantity,
+        creation_date=creation_date.isoformat(),
+        payment_date=payment_date.isoformat(),
+        delivery_date=delivery_date.isoformat()
     )

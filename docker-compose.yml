@@ -13,7 +13,7 @@ services:
   celery_server_worker:
     build: .
     container_name: celery_server_worker
-    command: celery -A server worker --loglevel=info --pool=solo
+    command: celery -A server worker --pool=solo --loglevel=info
     depends_on:
       - rabbitmq
     volumes:

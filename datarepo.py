@@ -26,10 +26,21 @@ product_create = '''
             )
         '''
 
+store_create = '''
+            CREATE TABLE store (
+                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_store TEXT,
+                name TEXT,
+                url TEXT               
+            )
+        '''
+
 stock_create = '''
             CREATE TABLE stock (
+                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_product TEXT,
-                quantity INT                
+                id_store TEXT,
+                quantity INT               
             )
         '''
 
@@ -38,6 +49,7 @@ purchase_order_create = '''
                 id_database INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT,
                 product_id TEXT,
+                store_id TEXT,
                 quantity INT,
                 creation_date TEXT,
                 payment_date TEXT, 
@@ -56,19 +68,24 @@ product_insert = '''
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     '''
 
+store_insert = '''
+        INSERT INTO store (id_store, name, url)  
+        VALUES (?, ?, ?)
+    '''
+
 stock_insert = '''
-            INSERT INTO stock (id_product, quantity)  
-            VALUES (?, ?)
-        '''
+        INSERT INTO stock (id_product, id_store, quantity)  
+        VALUES (?, ?, ?)
+    '''
 
 purchase_order_insert = '''
-            INSERT INTO purchase_order (user_id, product_id, quantity, creation_date,
-                payment_date, delivery_date, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?,  CURRENT_TIMESTAMP)
-        '''
+        INSERT INTO purchase_order (user_id, product_id, store_id, quantity, creation_date,
+            payment_date, delivery_date, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?,  CURRENT_TIMESTAMP)
+    '''
 
-create = {'user': user_create, 'product': product_create, 'stock': stock_create, 'purchase_order': purchase_order_create}
-insert = {'user': user_insert, 'product': product_insert, 'stock': stock_insert, 'purchase_order': purchase_order_insert}
+create = {'user': user_create, 'product': product_create, 'store': store_create, 'stock': stock_create, 'purchase_order': purchase_order_create}
+insert = {'user': user_insert, 'product': product_insert, 'store': store_insert, 'stock': stock_insert, 'purchase_order': purchase_order_insert}
 
 def get_database_connection(data_type, data):
     db_path = data_type + '.sqlite3'
