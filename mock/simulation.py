@@ -7,6 +7,8 @@ from collections import deque
 from graph_user_flow import *
 import time
 from datetime import datetime, timedelta
+import requests
+import json
 
 X = 1000  # Minimum value of purchases in the last 10 minutes
 Y = 5000  # Minimum value of purchases in the last 6 hours
@@ -16,6 +18,7 @@ class SimulationParams:
     cycle_duration: float
     num_initial_users: int
     num_initial_products: int
+    num_initial_stores: int
     qtd_stock_initial: int
     max_simultaneus_users: int
     num_new_users_per_cycle: int
@@ -35,6 +38,8 @@ class Simulation:
         self.products = []
         self.products_prices = {}
         self.new_products = []
+        self.stores = []
+        self.new_stores = []
         self.stock = {}
         self.new_stock_decreases = {}
         self.purchase_orders = []
@@ -50,13 +55,13 @@ class Simulation:
         self.G = G
 
         self.folder_name = "mock/mock_files"
-        self.subfolder_csv = "csv"
+        self.subfolder_sqlite3 = "sqlite3"
         self.subfolder_log = "log"
         self.subfolder_http_request = "request"
         self.log_filename = "log_simulation.txt"
         self.log_complete_path = f"{self.folder_name}/{self.subfolder_log}/{self.log_filename}"
-        self.csv_file_names = ["users.csv", "products.csv", "stock.csv", "purchase_orders.csv"]
-        self.csv_complete_path = [f"{self.folder_name}/{self.subfolder_csv}/{file_name}" for file_name in self.csv_file_names]
+        self.sqlite3_file_names = ["users.csv", "products.csv", "store.csv", "stock.csv", "purchase_orders.csv"]
+        self.sqlite3_complete_path = [f"{self.folder_name}/{self.subfolder_sqlite3}/{file_name}" for file_name in self.sqlite3_file_names]
         self.request_file_name = "request"
         self.request_complete_path = f"{self.subfolder_http_request}/{self.request_file_name}"
 
@@ -67,11 +72,11 @@ class Simulation:
             os.makedirs(self.folder_name)
 
         # Create inside folder_name or delete other folder if they exist for the other subfolders
-        csvs_folder = f"{self.folder_name}/{self.subfolder_csv}"
+        sqlite3_folder = f"{self.folder_name}/{self.subfolder_sqlite3}"
         logs_folder = f"{self.folder_name}/{self.subfolder_log}"
         http_request_folder = f"{self.folder_name}/{self.subfolder_http_request}"
 
-        for folder in [csvs_folder, logs_folder, http_request_folder]:
+        for folder in [sqlite3_folder, logs_folder, http_request_folder]:
             if os.path.exists(folder):
                 self.remove_folder_contents(folder)
             else:
@@ -85,15 +90,20 @@ class Simulation:
         for _ in range(self.params.num_initial_products):
             self.__generate_product()
 
+        # Generate products at the start of the simulation
+        for _ in range(self.params.num_initial_stores):
+            self.__generate_store()
+
         # Generate stock for the products
-        for product in self.products:
-            self.__generate_stock(product, self.params.qtd_stock_initial)
+        for store in self.stores:
+            for product in self.products:
+                self.__generate_stock(product, store, self.params.qtd_stock_initial)
 
         self.__report_initial_cycle()
     
     def __report_initial_cycle(self):
         # Report users, products and stocks created, creating the new csvs
-        with open(self.csv_complete_path[0], 'w') as file:
+        with open(self.sqlite3_complete_path[0], 'w') as file:
             writer = csv.writer(file, delimiter=';', lineterminator='\n')
             first_line = ["id", "name", "email", "address", "registration_date", "birth_date"]
             writer.writerow(first_line)
@@ -101,7 +111,7 @@ class Simulation:
             writer.writerows(content)
         self.new_users = []
         
-        with open(self.csv_complete_path[1], 'w') as file:
+        with open(self.sqlite3_complete_path[1], 'w') as file:
             writer = csv.writer(file, delimiter=';', lineterminator='\n')
             first_line = ["id", "name", "image", "description", "price"]
             writer.writerow(first_line)
@@ -109,17 +119,25 @@ class Simulation:
             writer.writerows(content)
         self.new_products = []
 
-        with open(self.csv_complete_path[2], 'w') as file:
+        with open(self.sqlite3_complete_path[2], 'w') as file:
             writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["id_product", "quantity"]
+            first_line = ["id", "name", "url"]
             writer.writerow(first_line)
-            content = [[product_id, quantity] for product_id, quantity in self.stock.items()]
+            content = [[store.id, store.name, store.url] for store in self.new_stores]
+            writer.writerows(content)
+        self.new_stores = []
+
+        with open(self.sqlite3_complete_path[3], 'w') as file:
+            writer = csv.writer(file, delimiter=';', lineterminator='\n')
+            first_line = ["id_product", "id_store", "quantity"]
+            writer.writerow(first_line)
+            content = [[store_product_id[1], store_product_id[0], quantity] for store_product_id, quantity in self.stock.items()]
             writer.writerows(content)
         self.new_products = []
 
-        with open(self.csv_complete_path[3], 'w') as file:
+        with open(self.sqlite3_complete_path[4], 'w') as file:
             writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["user_id", "product_id", "quantity", "creation_date", "payment_date", "delivery_date"]
+            first_line = ["user_id", "product_id", "store_id", "quantity", "creation_date", "payment_date", "delivery_date"]
             writer.writerow(first_line)
 
     def remove_folder_contents(self, folder_path):
@@ -185,8 +203,8 @@ class Simulation:
         message = f";Audit;{user};{LOGIN}\n"
         self.__add_message_to_log(message)
 
-        current_product_list = []
-        current_product = None
+        current_product_store_list = []
+        current_product_store = None
         
         while current_node != EXIT:
             # Select the next as the current node's successor, based on the probability of each neighbor in the edge
@@ -199,19 +217,19 @@ class Simulation:
                 self.__home(user)
 
             elif next_node == VIEW_PRODUCT:
-                products_in_stock = [product for product in self.products.copy() if self.stock[product] > 0]
+                products_in_stock = [(store, product) for store in self.stores.copy() for product in self.products.copy() if self.stock[(store, product)] > 0]
                 if not products_in_stock:
                     next_node = EXIT
                 else:
-                    current_product = choice(products_in_stock)
-                    self.__view_product(user, current_product)
+                    current_product_store = choice(products_in_stock)
+                    self.__view_product(user, current_product_store[0], current_product_store[1])
 
             elif next_node == CART:
-                current_product_list.append(current_product)
-                self.__cart(user, current_product)
+                current_product_store_list.append(current_product_store)
+                self.__cart(user, current_product_store[0], current_product_store[1])
 
             elif next_node == CHECKOUT:
-                self.__checkout(user, current_product_list)
+                self.__checkout(user, current_product_store_list)
 
             current_node = next_node
         self.__exit(user)
@@ -231,36 +249,38 @@ class Simulation:
         msg = f";User;{user};{STIMUL_SCROLLING};{HOME}.\n"
         self.__add_message_to_user_flow_report(msg)
 
-    def __view_product(self, user, product):
-        msg = f";User;{user};{STIMUL_ZOOM};{VIEW_PRODUCT} {product}.\n"
+    def __view_product(self, user, product, store):
+        msg = f";User;{user};{STIMUL_ZOOM};{VIEW_PRODUCT} {(store, product)}.\n"
         self.__add_message_to_user_flow_report(msg)
 
 
-    def __cart(self, user, product):
-        msg = f";User;{user};{STIMUL_CLICK};{CART} with {product}.\n"
+    def __cart(self, user, product, store):
+        msg = f";User;{user};{STIMUL_CLICK};{CART} with {(store, product)}.\n"
         self.__add_message_to_user_flow_report(msg)
 
-    def __checkout(self, user, product_list):
-        msg = f";User;{user};{STIMUL_CLICK};{CHECKOUT} with {product_list}.\n"
+    def __checkout(self, user, product_store_list):
+        product_list = 0
+        msg = f";User;{user};{STIMUL_CLICK};{CHECKOUT} with {product_store_list}.\n"
         self.__add_message_to_user_flow_report(msg)
 
-        total_value = sum([self.products_prices[product] for product in product_list])
-        self.purchase_history.append(models.Purchase_History(user, total_value, datetime.now()))
+        # total_value = sum([self.products_prices[product[0]] for product in product_store_list])
+        # self.purchase_history.append(models.Purchase_History(user, total_value, datetime.now()))
         
-        self.__evaluate_bonus(user)
+        # self.__evaluate_bonus(user)
         
         def add_purchase_order():
             dictionary_products = {}
-            for product in product_list:
-                dictionary_products[product] = dictionary_products.get(product, 0) + 1
-            for product, quantity in dictionary_products.items():
-                purchase_order = self.__generate_purchase_order(user, product, quantity)
+            for key in product_store_list:
+                dictionary_products[key] = dictionary_products.get(key, 0) + 1
+            for key, quantity in dictionary_products.items():
+                store,product = key
+                purchase_order = self.__generate_purchase_order(user, product, store, quantity)
                 
                 for _ in range(quantity):
-                    mesage = f";Audit;{user};BUY;{purchase_order.product_id}\n"
+                    mesage = f";Audit;{user};BUY;{(purchase_order.store_id, purchase_order.product_id)}\n"
                     self.__add_message_to_log(mesage)
 
-                self.__decrease_stock(product, quantity)
+                self.__decrease_stock(product, store, quantity)
         add_purchase_order()
 
     def __evaluate_bonus(self, user_id):
@@ -309,9 +329,10 @@ class Simulation:
         for _ in range(num_users):
             self.__generate_user()
 
-    def __generate_stock(self, product_id, quantity):
-        stock_product = models.generate_stock(product_id, quantity)
-        self.stock[stock_product.id_product] = stock_product.quantity
+    def __generate_stock(self, product_id, store_id, quantity):
+        stock_product = models.generate_stock(product_id, store_id, quantity)
+        key = (stock_product.id_store, stock_product.id_product)
+        self.stock[key] = stock_product.quantity
 
     def __generate_product(self):
         product = models.generate_product()
@@ -325,19 +346,26 @@ class Simulation:
         for _ in range(num_products):
             self.__generate_product()
 
-    def __generate_stock_for_new_products(self):
-        for product in self.new_products:
-            self.__generate_stock(product.id, randint(1, 100))
+    def __generate_store(self):
+        store = models.generate_store()
+        self.stores.append(store.id)
+        self.new_stores.append(store)
 
-    def __decrease_stock(self, product_id, quantity):
-        self.new_stock_decreases[product_id] = self.new_stock_decreases.get(product_id, 0) + quantity
+    def __generate_stock_for_new_products(self):
+        for store in self.stores:
+            for product in self.new_products:
+                self.__generate_stock(product.id, store, randint(1, 100))
+
+    def __decrease_stock(self, product_id, store_id, quantity):
+        key = (store_id, product_id)
+        self.new_stock_decreases[key] = self.new_stock_decreases.get(key, 0) + quantity
 
     def __update_cycle_stock(self):
-        for product_id, quantity in self.new_stock_decreases.items():
-            self.stock[product_id] -= quantity
+        for key, quantity in self.new_stock_decreases.items():
+            self.stock[key] -= quantity
 
-    def __generate_purchase_order(self, user_id, product_id, quantity):
-        purchase_order = models.generate_purchase_order(user_id, product_id, quantity)
+    def __generate_purchase_order(self, user_id, product_id, store_id, quantity):
+        purchase_order = models.generate_purchase_order(user_id, product_id, store_id, quantity)
         self.purchase_orders.append(purchase_order)
         self.new_purchase_orders.append(purchase_order)
         return purchase_order
@@ -358,7 +386,6 @@ class Simulation:
         self.user_flow_report = self.user_flow_report[:len(self.user_flow_report)//2]
 
         log_flow_colunms = ["timestamp", "type", "content", "extra_1", "extra_2"]
-        self.user_flow_report.insert(0, ";".join(log_flow_colunms) + "\n")
 
 
         first_half.insert(0, ";".join(log_flow_colunms) + "\n")
@@ -394,32 +421,31 @@ class Simulation:
 
     def add_new_purchase_orders_to_csv(self):
         if self.new_purchase_orders:
-            content = [[purchase_order.user_id, purchase_order.product_id, purchase_order.quantity, purchase_order.creation_date, purchase_order.payment_date, purchase_order.delivery_date] for purchase_order in self.new_purchase_orders]
-            with open(self.csv_complete_path[3], 'a') as file:
+            content = [[purchase_order.user_id, purchase_order.product_id, purchase_order.store_id, purchase_order.quantity, purchase_order.creation_date, purchase_order.payment_date, purchase_order.delivery_date] for purchase_order in self.new_purchase_orders]
+            with open(self.sqlite3_complete_path[4], 'a') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
                 writer.writerows(content)
     
     def rewrite_full_stock_to_csv(self):
         if self.new_stock_decreases:
-            first_line = ["id_product", "quantity"]
-            content = [[product_id, quantity] for product_id, quantity in self.stock.items()]
-            # Add the first line to the content beggining
+            first_line = ["id_product", "id_store", "quantity"]
+            content = [[store_id, product_id, quantity] for (store_id, product_id), quantity in self.stock.items()]
             content.insert(0, first_line)
-            with open(self.csv_complete_path[2], 'w', newline='') as file:
+            with open(self.sqlite3_complete_path[3], 'w', newline='') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
                 writer.writerows(content)
 
     def new_method(self):
         if self.new_products:
             content = [[product.id, product.name, product.image, product.description, product.price] for product in self.new_products]
-            with open(self.csv_complete_path[1], 'a') as file:
+            with open(self.sqlite3_complete_path[1], 'a') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
                 writer.writerows(content)
     
     def add_new_users_to_csv(self):
         if self.new_users:
             content = [[user.id, user.name, user.email, user.address, user.registration_date, user.birth_date] for user in self.new_users]
-            with open(self.csv_complete_path[0], 'a') as file:
+            with open(self.sqlite3_complete_path[0], 'a') as file:
                 writer = csv.writer(file, delimiter=';', lineterminator='\n')
                 writer.writerows(content)
 
