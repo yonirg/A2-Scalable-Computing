@@ -7,11 +7,98 @@ from collections import deque
 from graph_user_flow import *
 import time
 from datetime import datetime, timedelta
+import sqlite3
 import requests
 import json
 
 X = 1000  # Minimum value of purchases in the last 10 minutes
 Y = 5000  # Minimum value of purchases in the last 6 hours
+
+user_create = '''
+            CREATE TABLE user (
+                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT,
+                name TEXT,
+                email TEXT,
+                address TEXT,
+                registration_date TEXT,
+                birth_date TEXT,
+                timestamp TEXT
+            )
+        '''
+
+product_create = '''
+            CREATE TABLE product (
+                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT,
+                name TEXT,
+                image TEXT,
+                description TEXT,
+                price REAL, 
+                timestamp TEXT
+            )
+        '''
+
+store_create = '''
+            CREATE TABLE store (
+                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_store TEXT,
+                name TEXT,
+                url TEXT               
+            )
+        '''
+
+stock_create = '''
+            CREATE TABLE stock (
+                id_product TEXT,
+                id_store TEXT,
+                quantity INT,
+                PRIMARY KEY (id_product, id_store)             
+            )
+        '''
+
+purchase_order_create = '''
+            CREATE TABLE purchase_order (
+                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
+                product_id TEXT,
+                store_id TEXT,
+                quantity INT,
+                creation_date TEXT,
+                payment_date TEXT, 
+                delivery_date TEXT, 
+                timestamp TEXT
+            )
+        '''
+
+user_insert = '''
+        INSERT INTO user (id, name, email, address, registration_date, birth_date, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    '''
+
+product_insert = '''
+        INSERT INTO product (id, name, image, description, price, timestamp)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    '''
+
+store_insert = '''
+        INSERT INTO store (id_store, name, url)  
+        VALUES (?, ?, ?)
+    '''
+
+stock_insert = '''
+        INSERT INTO stock (id_product, id_store, quantity)  
+        VALUES (?, ?, ?)
+    '''
+
+purchase_order_insert = '''
+        INSERT INTO purchase_order (user_id, product_id, store_id, quantity, creation_date,
+            payment_date, delivery_date, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?,  CURRENT_TIMESTAMP)
+    '''
+
+create = {'user': user_create, 'product': product_create, 'store': store_create, 'stock': stock_create, 'purchase_order': purchase_order_create}
+insert = {'user': user_insert, 'product': product_insert, 'store': store_insert, 'stock': stock_insert, 'purchase_order': purchase_order_insert}
 
 @dataclass
 class SimulationParams:
@@ -60,7 +147,7 @@ class Simulation:
         self.subfolder_http_request = "request"
         self.log_filename = "log_simulation.txt"
         self.log_complete_path = f"{self.folder_name}/{self.subfolder_log}/{self.log_filename}"
-        self.sqlite3_file_names = ["users.csv", "products.csv", "store.csv", "stock.csv", "purchase_orders.csv"]
+        self.sqlite3_file_names = ["users.sqlite3", "products.sqlite3", "store.sqlite3", "stock.sqlite3", "purchase_orders.sqlite3"]
         self.sqlite3_complete_path = [f"{self.folder_name}/{self.subfolder_sqlite3}/{file_name}" for file_name in self.sqlite3_file_names]
         self.request_file_name = "request"
         self.request_complete_path = f"{self.subfolder_http_request}/{self.request_file_name}"
@@ -100,45 +187,74 @@ class Simulation:
                 self.__generate_stock(product, store, self.params.qtd_stock_initial)
 
         self.__report_initial_cycle()
+
+    def __connect(self, data_type, index):
+            db_path = self.sqlite3_complete_path[index]
+            db_exists = os.path.exists(db_path)
+            
+            # Conectar ao banco de dados
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Criar tabela se o banco de dados não existir
+            if not db_exists:
+                cursor.execute(create[data_type])
+
+                conn.commit()
+            
+            return conn
     
     def __report_initial_cycle(self):
-        # Report users, products and stocks created, creating the new csvs
-        with open(self.sqlite3_complete_path[0], 'w') as file:
-            writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["id", "name", "email", "address", "registration_date", "birth_date"]
-            writer.writerow(first_line)
-            content = [[user.id, user.name, user.email, user.address, user.registration_date, user.birth_date] for user in self.new_users]
-            writer.writerows(content)
+         # Report users, products and stocks created, creating the new data bases
+        data_type = 'user'
+        conn = self.__connect(data_type, 0)
+        cursor = conn.cursor()
+
+        content = [[user.id, user.name, user.email, user.address, user.registration_date, user.birth_date] for user in self.new_users]
+        for item in content:
+            cursor.execute(insert[data_type], item)
+
+        conn.commit()
+        conn.close()
         self.new_users = []
         
-        with open(self.sqlite3_complete_path[1], 'w') as file:
-            writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["id", "name", "image", "description", "price"]
-            writer.writerow(first_line)
-            content = [[product.id, product.name, product.image, product.description, product.price] for product in self.new_products]
-            writer.writerows(content)
+        data_type = 'product'
+        conn = self.__connect(data_type, 1)
+        cursor = conn.cursor()
+
+        content = [[product.id, product.name, product.image, product.description, product.price] for product in self.new_products]
+        for item in content:
+            cursor.execute(insert[data_type], item)
+
+        conn.commit()
+        conn.close()
         self.new_products = []
 
-        with open(self.sqlite3_complete_path[2], 'w') as file:
-            writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["id", "name", "url"]
-            writer.writerow(first_line)
-            content = [[store.id, store.name, store.url] for store in self.new_stores]
-            writer.writerows(content)
+        data_type = 'store'
+        conn = self.__connect(data_type, 2)
+        cursor = conn.cursor()
+
+        content = [[store.id, store.name, store.url] for store in self.new_stores]
+        for item in content:
+            cursor.execute(insert[data_type], item)
+
+        conn.commit()
+        conn.close()
         self.new_stores = []
 
-        with open(self.sqlite3_complete_path[3], 'w') as file:
-            writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["id_product", "id_store", "quantity"]
-            writer.writerow(first_line)
-            content = [[store_product_id[1], store_product_id[0], quantity] for store_product_id, quantity in self.stock.items()]
-            writer.writerows(content)
-        self.new_products = []
+        data_type = 'stock'
+        conn = self.__connect(data_type, 3)
+        cursor = conn.cursor()
 
-        with open(self.sqlite3_complete_path[4], 'w') as file:
-            writer = csv.writer(file, delimiter=';', lineterminator='\n')
-            first_line = ["user_id", "product_id", "store_id", "quantity", "creation_date", "payment_date", "delivery_date"]
-            writer.writerow(first_line)
+        content = [[store_product_id[1], store_product_id[0], quantity] for store_product_id, quantity in self.stock.items()]
+        for item in content:
+            cursor.execute(insert[data_type], item)
+
+        conn.commit()
+        conn.close()
+
+        data_type = 'purchase_order'
+        self.__connect(data_type, 4)
 
     def remove_folder_contents(self, folder_path):
         for root, _, files in os.walk(folder_path):
@@ -205,6 +321,7 @@ class Simulation:
 
         current_product_store_list = []
         current_product_store = None
+
         
         while current_node != EXIT:
             # Select the next as the current node's successor, based on the probability of each neighbor in the edge
@@ -405,10 +522,10 @@ class Simulation:
         self.new_method()
         self.new_products = []
 
-        self.rewrite_full_stock_to_csv()
+        self.rewrite_full_stock_to_sqlite3()
         self.new_stock_decreases = {}
 
-        self.add_new_purchase_orders_to_csv()
+        self.add_new_purchase_orders_to_sqlite3()
         self.new_purchase_orders = []
 
 
@@ -419,35 +536,63 @@ class Simulation:
                     log_file.write(f"Coupon issued to user {user_id}: {coupon_code}\n")
             self.issued_coupons.clear()
 
-    def add_new_purchase_orders_to_csv(self):
+    def add_new_purchase_orders_to_sqlite3(self):
         if self.new_purchase_orders:
+            data_type = 'purchase_order'
+            conn = self.__connect(data_type, 4)
+            cursor = conn.cursor()
+
             content = [[purchase_order.user_id, purchase_order.product_id, purchase_order.store_id, purchase_order.quantity, purchase_order.creation_date, purchase_order.payment_date, purchase_order.delivery_date] for purchase_order in self.new_purchase_orders]
-            with open(self.sqlite3_complete_path[4], 'a') as file:
-                writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                writer.writerows(content)
+            for item in content:
+                cursor.execute(insert[data_type], item)
+            conn.commit()
+            conn.close()       
     
-    def rewrite_full_stock_to_csv(self):
+    def rewrite_full_stock_to_sqlite3(self):
         if self.new_stock_decreases:
-            first_line = ["id_product", "id_store", "quantity"]
-            content = [[store_id, product_id, quantity] for (store_id, product_id), quantity in self.stock.items()]
-            content.insert(0, first_line)
-            with open(self.sqlite3_complete_path[3], 'w', newline='') as file:
-                writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                writer.writerows(content)
+            data_type = 'stock'
+            conn = self.__connect(data_type, 3)
+            cursor = conn.cursor()
+
+            upsert_query = '''
+                INSERT INTO stock (id_product, id_store, quantity)
+                VALUES (?, ?, ?)
+                ON CONFLICT(id_product, id_store) 
+                DO UPDATE SET quantity = stock.quantity - excluded.quantity
+            '''
+
+            content = [[product_id, store_id, quantity] for (store_id, product_id), quantity in self.new_stock_decreases.items()]
+            for item in content:
+                cursor.execute(upsert_query, item)
+
+            conn.commit()
+            conn.close()
 
     def new_method(self):
         if self.new_products:
+            data_type = 'product'
+            conn = self.__connect(data_type, 1)
+            cursor = conn.cursor()
+
             content = [[product.id, product.name, product.image, product.description, product.price] for product in self.new_products]
-            with open(self.sqlite3_complete_path[1], 'a') as file:
-                writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                writer.writerows(content)
+            for item in content:
+                cursor.execute(insert[data_type], item)
+
+            conn.commit()
+            conn.close()
     
     def add_new_users_to_csv(self):
         if self.new_users:
+            data_type = 'user'
+            conn = self.__connect(data_type, 0)
+            cursor = conn.cursor()
+
             content = [[user.id, user.name, user.email, user.address, user.registration_date, user.birth_date] for user in self.new_users]
-            with open(self.sqlite3_complete_path[0], 'a') as file:
-                writer = csv.writer(file, delimiter=';', lineterminator='\n')
-                writer.writerows(content)
+            for item in content:
+                cursor.execute(insert[data_type], item)
+
+            conn.commit()
+            conn.close()
 
     def write_log_dataAnalytics(self, request_cycle):
         if self.user_flow_report:
