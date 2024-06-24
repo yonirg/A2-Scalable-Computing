@@ -1,4 +1,11 @@
 services:
+  simulator:
+    build: .
+    container_name: simulator
+    command: python /app/mock/main.py
+    volumes:
+      - .:/app
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq

@@ -23,4 +23,8 @@ COPY server.py .
 COPY client.py .
 COPY datarepo.py .
 #COPY cupom.py .
-COPY mock/ ./mock/
+COPY mock/graph_user_flow.py ./mock/
+COPY mock/main.py ./mock/
+COPY mock/simulation.py ./mock/
+COPY mock/models.py ./mock/
+COPY leitura.py .

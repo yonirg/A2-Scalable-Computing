@@ -13,6 +13,21 @@ app.conf.result_serializer = 'json'
 # Configuração do logger
 logger = get_task_logger(__name__)
 
+@app.task(delivery_mode=2)
+def process_click_data(click_data_json):
+    click_data = json.loads(click_data_json)
+    logger.info(f"Recebido dados de click: {click_data}")
+
+@app.task(delivery_mode=2)
+def process_zoom_data(zoom_data_json):
+    zoom_data = json.loads(zoom_data_json)
+    logger.info(f"Recebido dados de click: {zoom_data}")
+
+@app.task(delivery_mode=2)
+def process_scrolling_data(scrolling_data_json):
+    scrolling_data = json.loads(scrolling_data_json)
+    logger.info(f"Recebido dados de click: {scrolling_data}")
+
 # Tarefa para processar dados do usuário e salvar no banco de dados
 @app.task(delivery_mode=2)
 def process_user_data(user_data_json):

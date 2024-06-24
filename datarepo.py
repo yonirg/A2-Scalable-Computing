@@ -37,10 +37,10 @@ store_create = '''
 
 stock_create = '''
             CREATE TABLE stock (
-                id_database INTEGER PRIMARY KEY AUTOINCREMENT,
                 id_product TEXT,
                 id_store TEXT,
-                quantity INT               
+                quantity INT,
+                PRIMARY KEY (id_product, id_store)             
             )
         '''
 
@@ -60,12 +60,12 @@ purchase_order_create = '''
 
 user_insert = '''
         INSERT INTO user (id, name, email, address, registration_date, birth_date, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     '''
 
 product_insert = '''
         INSERT INTO product (id, name, image, description, price, timestamp)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?)
     '''
 
 store_insert = '''
@@ -81,7 +81,7 @@ stock_insert = '''
 purchase_order_insert = '''
         INSERT INTO purchase_order (user_id, product_id, store_id, quantity, creation_date,
             payment_date, delivery_date, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?,  CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?,  ?)
     '''
 
 create = {'user': user_create, 'product': product_create, 'store': store_create, 'stock': stock_create, 'purchase_order': purchase_order_create}
@@ -101,6 +101,10 @@ def get_database_connection(data_type, data):
 
         conn.commit()
 
-    cursor.execute(insert[data_type], list(data.values()))
+    valores = list(data.values())
+    if data_type != "stock":
+        valores = valores[1:]
+
+    cursor.execute(insert[data_type], valores)
     conn.commit()
     conn.close()

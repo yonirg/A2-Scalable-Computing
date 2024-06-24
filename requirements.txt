@@ -2,3 +2,6 @@ celery
 faker
 psycopg2
 pyspark
+networkx
+dataclasses
+faker

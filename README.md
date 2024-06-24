@@ -23,6 +23,15 @@ Para iniciar o projeto, abra um terminal na pasta do repositório e execute o se
 docker-compose up --build -d
 ```
 
+```bash
+python mock/web.py
+
+python leitura.py
+
+python leitura_web.py
+
+```
+
 Em seguida, inicie o cliente:
 
 ```bash

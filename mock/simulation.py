@@ -2,14 +2,11 @@ import os
 from dataclasses import dataclass
 from random import choice, randint, random, choices, shuffle
 import models
-import csv
 from collections import deque
 from graph_user_flow import *
 import time
 from datetime import datetime, timedelta
 import sqlite3
-import requests
-import json
 
 X = 1000  # Minimum value of purchases in the last 10 minutes
 Y = 5000  # Minimum value of purchases in the last 6 hours

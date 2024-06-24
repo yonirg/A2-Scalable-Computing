@@ -3,100 +3,95 @@ from server import process_user_data, process_product_data, process_store_data, 
 from concurrent.futures import ThreadPoolExecutor
 import random
 import json
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType
+from pyspark.sql.functions import lit
+import sqlite3
+import os
 
-mult = 10
-# Quantidade de dados simulados a serem gerados
-num_users = 10 * mult
-num_products = 10 * mult
-num_stores = 1 * mult
-num_purchase_orders = 20 * mult
 
-# Gerar usuários simulados
-users = [generate_user() for _ in range(num_users)]
+diretorio = 'mock\\mock_files\\sqlite3'
 
-# Gerar produtos simulados
-products = [generate_product() for _ in range(num_products)]
-
-# Gerar lojas simuladas
-stores = [generate_store() for _ in range(num_stores)]
-
-# Gerar estoque para cada produto simulado
-stocks = [generate_stock(product.id, store.id, random.randint(1, 100)) for product in products for store in stores]
-
-# Gerar ordens de compra simuladas
-purchase_orders = [
-    generate_purchase_order(
-        random.choice(users).id,
-        random.choice(products).id,
-        random.choice(stores).id,
-        random.randint(1, 10)
-    ) for _ in range(num_purchase_orders)
+arquivos = [
+    'users.sqlite3',
+    'products.sqlite3',
+    'store.sqlite3',
+    'stock.sqlite3',
+    'purchase_orders.sqlite3'
 ]
 
-purchase_orders_recent = [
-    generate_purchase_order_recent(
-        random.choice(users).id,
-        random.choice(products).id,
-        random.choice(stores).id,
-        random.randint(1, 10)
-    ) for _ in range(num_purchase_orders)
-]
+tabelas = ['user', 'product', 'store', 'stock', 'purchase_order']
 
-NUM_MESSAGES = 10
+def executar_consulta(database_file, query):
+    conn = sqlite3.connect(database_file)
+    cursor = conn.cursor()
+    cursor.execute(query)
+    
+    # Obtém os nomes das colunas
+    colunas = [desc[0] for desc in cursor.description]
+    
+    # Obtém os resultados como lista de dicionários
+    resultados = []
+    for linha in cursor.fetchall():
+        resultado_dict = dict(zip(colunas, linha))
+        resultados.append(resultado_dict)
+    
+    conn.close()
+    return resultados
 
-# Assume que process_user_data, process_product_data, process_store_data, process_stock_data, process_purchase_order_data are defined
-
-# Define functions to handle delayed processing for each type
 def process(process_name, data):
     print(process_name)
     for row in data:
         row_json = json.dumps(row.__dict__)
         process_user_data.delay()    
 
-
-def process_users():
+def process_users(users):
     print("Users:")
     for user in users:
-        dados = json.dumps(user.__dict__)
+        dados = json.dumps(user)
         process_user_data.delay(dados)
 
-def process_products():
+def process_products(products):
     print("\nProducts:")
     for product in products:
-        dados = json.dumps(product.__dict__)
+        dados = json.dumps(product)
         process_product_data.delay(dados)
 
-def process_stores():
+def process_stores(stores):
     print("\nLojas:")
     for store in stores:
-        dados = json.dumps(store.__dict__) 
+        dados = json.dumps(store) 
         process_store_data.delay(dados)
 
-def process_stocks():
+def process_stocks(stocks):
     print("\nStocks:")
     for stock in stocks:
-        dados = json.dumps(stock.__dict__)
+        dados = json.dumps(stock)
         process_stock_data.delay(dados)
 
-def process_purchase_orders():
+def process_purchase_orders(purchase_orders):
     print("\nPurchase Orders:")
     for order in purchase_orders:
-        dados = json.dumps(order.__dict__)
+        dados = json.dumps(order)
         process_purchase_order_data.delay(dados)
 
-def process_purchase_orders_recent():
-    print("\nRecent purchase Orders:")
-    for order in purchase_orders_recent:
-        dados = json.dumps(order.__dict__)
-        process_purchase_order_data.delay(dados)
+# Inicia uma sessão Spark
+# spark = SparkSession.builder \
+#     .appName("ContaVerde") \
+#     .master("local[*]") \
+#     .getOrCreate()
 
-# Create a ThreadPoolExecutor
-with ThreadPoolExecutor(max_workers=5) as executor:
-    # Submit each processing function to its own thread
-    executor.submit(process_users)
-    executor.submit(process_products)
-    executor.submit(process_stores)
-    executor.submit(process_stocks)
-    executor.submit(process_purchase_orders)
-    #executor.submit(process_purchase_orders_recent)
-
+for index, arquivo in enumerate(arquivos):
+    caminho_arquivo = os.path.join(diretorio, arquivo)
+    consulta_sql = f'SELECT * FROM {tabelas[index]};'
+    resultados = executar_consulta(caminho_arquivo, consulta_sql)
+    if index == 0:
+        process_users(resultados)
+    elif index == 1:
+        process_products(resultados)
+    elif index == 2:
+        process_stores(resultados)
+    elif index == 3:
+        process_stocks(resultados)
+    elif index == 4:
+        process_purchase_orders(resultados)
